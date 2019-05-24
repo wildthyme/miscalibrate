@@ -5,11 +5,7 @@ alias cdb="calibredb --library-path=http://localhost:8084"
 
 function updatecalibrerecord { # args: calibre id for book, path to track, then any args to pass to "calibredb set_metadata"
   local calibreid="$1"; shift
-  echo CALIBREID
-  echo $calibreid
   local trackpath="$1"; shift # was $2 before - seems wrong
-  echo TRACKPATH
-  echo $trackpath
   local items=("$@")
   beet extractart -o /tmp/cover_"$calibreid" "path::^$trackpath$"
   for f in "/tmp/calibeetcover_$calibreid."*(N); do # find potential covers and add them to the metadata list at most once
@@ -38,7 +34,6 @@ function propagate {
   -fseries_index:$disc.$track
   -ftags:beets,Audiobook' | while read -r line
   do # get list of audiobook tracks that don't have calibreids then create empty books, update metadata, add tracks
-    echo $line
     if [[ ! $line == '-f'* ]]; then
       if [[ ! $line == '/'* ]]; then
         if [[ $1 == 'updates' ]] then
@@ -59,7 +54,6 @@ function propagate {
           echo creating
           # Make empty record and grab id
           calibreid=`cdb add -e -T beets | sed -re 's/^Added book ids: ([[:digit:]]+)$/\1/'`
-          echo $calibreid
           beet modify -y calibreid=$calibreid "path:$trackpath"
         fi
         updatecalibrerecord $calibreid $trackpath $items
@@ -70,6 +64,17 @@ function propagate {
         if [[ $1 == 'creations' ]]; then
           ln "$trackpath" "$bookpath"
           cdb add_format "$calibreid" "$bookpath"
+        fi
+        if [[ $2 ]]; then
+          echo "deleting $bookpath"
+          rm "$bookpath"
+          if [[ $2 == 'symlink' ]]; then
+            echo "symlinking $trackpath" to "$bookpath"
+            ln -s "$trackpath" "$bookpath"
+          else
+            echo "hardlinking $trackpath" to "$bookpath"
+            ln "$trackpath" "$bookpath"
+          fi
         fi
         items=( )
         unset trackpath trackfilename trackext calibreid globarray bookfolder bookname bookpath
@@ -101,12 +106,11 @@ function calibredelete {
   fi
 }
 
-if [[ $# -eq 0 ]]; then
-  docreations=1
-  doupdates=1
-  dodeletions=1
-fi
-while getopts "cuds" opt; do
+docreations=0
+doupdates=0
+dodeletions=0
+link=
+while getopts "cudshy" opt; do
   case "$opt" in
   c) docreations=1
     ;;
@@ -119,10 +123,22 @@ while getopts "cuds" opt; do
     doupdates=1
     dodeletions=1
     ;;
+  h)
+    link="hardlink"
+    ;;
+  y)
+    link="symlink"
+    ;;
   esac
 done
+if [[ $link == "hardlink" || $link == "symlink" ]]; then
+  if [[ $doupdates == "0" ]]; then
+    echo "Options -h and -y should only be used when doing updates with -u or -s" 1>&2
+    exit 1
+  fi
+fi
 
 if [[ $dodeletions == 1 ]]; then beetdelete; fi
 if [[ $docreations == 1 ]]; then propagate 'creations'; fi
-if [[ $doupdates == 1 ]]; then propagate 'updates'; fi
+if [[ $doupdates == 1 ]]; then propagate 'updates' $link; fi
 if [[ $dodeletions == 1 ]]; then calibredelete; fi
