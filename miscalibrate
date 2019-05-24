@@ -1,7 +1,8 @@
 #!/usr/bin/zsh
-AUDIOBOOKQUERY="genre::^Audiobook$"
-CALIBRELIBRARY="/mnt/Cecilia/LibraryOfStJohnTheBeheaded"
-alias cdb="calibredb --library-path=http://localhost:8084"
+THISDIR="$(dirname "$(readlink -f "$0")")"
+if [[ -e $THISDIR/options ]]; then
+  source $THISDIR/options
+fi
 
 function updatecalibrerecord { # args: calibre id for book, path to track, then any args to pass to "calibredb set_metadata"
   local calibreid="$1"; shift
@@ -12,7 +13,7 @@ function updatecalibrerecord { # args: calibre id for book, path to track, then 
     items+=("-fcover:$f")
     break
   done
-  cdb set_metadata $items $calibreid
+  $CDB set_metadata $items $calibreid
   rm "/tmp/calibeetcover_$calibreid."*(N) 2> /dev/null # cleanup cover if it was made
 }
 
@@ -53,7 +54,7 @@ function propagate {
         if [[ $1 == 'creations' ]]; then
           echo creating
           # Make empty record and grab id
-          calibreid=`cdb add -e -T beets | sed -re 's/^Added book ids: ([[:digit:]]+)$/\1/'`
+          calibreid=`$CDB add -e -T beets | sed -re 's/^Added book ids: ([[:digit:]]+)$/\1/'`
           beet modify -y calibreid=$calibreid "path:$trackpath"
         fi
         updatecalibrerecord $calibreid $trackpath $items
@@ -63,7 +64,7 @@ function propagate {
         bookpath="$bookfolder"/"$bookname"."$trackext"
         if [[ $1 == 'creations' ]]; then
           ln "$trackpath" "$bookpath"
-          cdb add_format "$calibreid" "$bookpath"
+          $CDB add_format "$calibreid" "$bookpath"
         fi
         if [[ $2 ]]; then
           echo "deleting $bookpath"
@@ -84,7 +85,7 @@ function propagate {
 }
 
 function beetdelete {
-  deletables=("${(@f)$(comm -13 <(cdb list -f '' -s 'tags:beets' | tail -n +2 | sort) <(beet ls "genre::^Audiobook$" "calibreid::^.+$" -f '$calibreid' | sort))}") # find tracks that have calibreids listed but are missing from calibre to blank them from beets (they were added incorrectly)
+  deletables=("${(@f)$(comm -13 <($CDB list -f '' -s 'tags:beets' | tail -n +2 | sort) <(beet ls "genre::^Audiobook$" "calibreid::^.+$" -f '$calibreid' | sort))}") # find tracks that have calibreids listed but are missing from calibre to blank them from beets (they were added incorrectly)
   if [[ ! -z "$deletables" ]]; then
     deltablesarg=( )
     for i in $deletables; do
@@ -98,11 +99,11 @@ function beetdelete {
 }
 
 function calibredelete {
-  deletables=("${(@f)$(comm -23 <(cdb list -f '' -s 'tags:beets' | tail -n +2 | sort) <(beet ls "genre::^Audiobook$" "calibreid::^.+$" -f '$calibreid' | sort))}") # find books that are marked as belonging to beets but beets has no knowledge of to delete them from calibre (they're either added incorrectly or deletions from beets that need to be propagated)
+  deletables=("${(@f)$(comm -23 <($CDB list -f '' -s 'tags:beets' | tail -n +2 | sort) <(beet ls "genre::^Audiobook$" "calibreid::^.+$" -f '$calibreid' | sort))}") # find books that are marked as belonging to beets but beets has no knowledge of to delete them from calibre (they're either added incorrectly or deletions from beets that need to be propagated)
   if [[ ! -z "$deletables" ]]; then
     deletablesarg=$(printf ",%s" "${deletables[@]}"); deletablesarg=${deletablesarg:1} #join array with commas
     echo "Deleting $deletables[(I)$deletables[-1]] items from calibre."
-    cdb remove $deletablesarg
+    $CDB remove $deletablesarg
   fi
 }
 
